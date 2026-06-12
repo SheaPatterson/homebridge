@@ -1,19 +1,19 @@
 {
-  "name": "homebridge-plugin-name",
-  "displayName": "Plugin Name",
+  "name": "homebridge-control,
+  "displayName": "Home Control",
   "type": "module",
   "version": "1.0.0",
-  "private": true,
-  "description": "A short description about what your plugin does.",
-  "author": "Your Name",
+  "private": false,
+  "description": "Controls Smart Devices",
+  "author": "Shea Patterson",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
+  "homepage": "https://github.com/SheaPatterson/homebridge.git",
   "repository": {
     "type": "git",
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "https://github.com/SheaPatterson/homebridge.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/SheaPatterson/homebridge/issues"
   },
   "keywords": [
     "homebridge-plugin"
@@ -42,5 +42,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true
   }
 }
