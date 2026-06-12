@@ -6,6 +6,79 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 // This is only required when using Custom Services and Characteristics not support by HomeKit
 import { EveHomeKitTypes } from 'homebridge-lib/EveHomeKitTypes';
 
+// WebSocket server for local dashboard communication (Port 3001)
+import { WebSocketServer } from 'ws';
+const wsServer = new WebSocketServer({ port: 3001 });
+
+/**
+ * Broadcasts a state change payload to all connected web clients.
+ */
+const broadcastStateChange = (payload: any) => {
+  wsServer.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      client.send(JSON.stringify(payload));
+    }
+  });
+};
+
+/**
+ * Handles state change events and broadcasts them over WebSocket.
+ */
+const handleStateChange = (deviceId: string, characteristic: Characteristic, newValue: any) => {
+  // Standardize the payload structure for the frontend
+  const payload = { 
+    type: 'state_change', 
+    deviceId: deviceId, 
+    characteristicName: characteristic.name, 
+    value: newValue 
+  };
+  console.log('Broadcasting state change:', JSON.stringify(payload)); // Use console.log for visibility in Homebridge logs
+  broadcastStateChange(payload);
+};
+
+/**
+ * Wraps the standard Characteristic setter to intercept changes and broadcast them.
+ */
+const wrapCharacteristic = (characteristic: Characteristic) => {
+  // Check if already wrapped to prevent multiple wrappers
+  if ((characteristic as any).__wrapped_setter) {
+    return characteristic as any; 
+  }
+
+  const originalSetter = characteristic.setValue.bind(characteristic);
+
+  characteristic.setValue = function(value: any) {
+    try {
+      // 1. Check if the value actually changed before proceeding
+      const oldValue = characteristic.getCharacteristicValue();
+      if (oldValue === value) {
+        return; // No change, do nothing
+      }
+
+      // 2. Call the original setter to update HomeKit state
+      originalSetter(value);
+
+      // 3. Broadcast the change to the local dashboard clients
+      handleStateChange(characteristic.accessory.UUID, characteristic, value);
+    } catch (e) {
+      console.error('Error setting characteristic value:', e); // Use console.error for visibility in Homebridge logs
+    }
+  };
+  // Attach a flag to identify the wrapped function
+  (characteristic as any).__wrapped_setter = true;
+  return characteristic; 
+};
+
+/**
+ * Intercepts all characteristics on an accessory, applying the wrapper.
+ */
+const interceptCharacteristics = (accessory: PlatformAccessory) => {
+  for (const [name, characteristic] of Object.entries(accessory.characteristics)) {
+    // Apply the wrapper function to each characteristic's setter
+    characteristic[name] = wrapCharacteristic(characteristic as Characteristic);
+  }
+};
+
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -59,6 +132,9 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
     // add the restored accessory to the accessories cache, so we can track if it has already been registered
     this.accessories.set(accessory.UUID, accessory);
+
+    // Apply characteristic interception on cached accessories
+    interceptCharacteristics(accessory);
   }
 
   /**
@@ -107,7 +183,6 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         // this.api.updatePlatformAccessories([existingAccessory]);
 
         // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
         new ExamplePlatformAccessory(this, existingAccessory);
 
         // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, e.g.:
@@ -126,7 +201,6 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         accessory.context.device = device;
 
         // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
         new ExamplePlatformAccessory(this, accessory);
 
         // link the accessory to your platform
@@ -138,8 +212,6 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
     }
 
     // you can also deal with accessories from the cache which are no longer present by removing them from Homebridge
-    // for example, if your plugin logs into a cloud account to retrieve a device list, and a user has previously removed a device
-    // from this cloud account, then this device will no longer be present in the device list but will still be in the Homebridge cache
     for (const [uuid, accessory] of this.accessories) {
       if (!this.discoveredCacheUUIDs.includes(uuid)) {
         this.log.info('Removing existing accessory from cache:', accessory.displayName);
