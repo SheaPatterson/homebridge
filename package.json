@@ -31,6 +31,7 @@
     "dev": "npm run watch"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
     "homebridge-lib": "^8.0.1"
   },
   "devDependencies": {

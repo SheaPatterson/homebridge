@@ -13,7 +13,7 @@ const wsServer = new WebSocketServer({ port: 3001 });
 /**
  * Broadcasts a state change payload to all connected web clients.
  */
-const broadcastStateChange = (payload: any, accessory: PlatformAccessory) => { // FIX 2: Added accessory parameter for context
+const broadcastStateChange = (payload: any, accessory: PlatformAccessory) => {
   // The client type is WebSocket | WebSocket. We cast it here for simplicity in this example.
   (wsServer as any).clients.forEach((client: WebSocket) => { // FIX 3: Explicitly typed the client parameter
     if (client && typeof client.readyState === 'number' && client.readyState === 1) { // FIX 2: Check readyState and ensure client exists
@@ -27,10 +27,12 @@ const broadcastStateChange = (payload: any, accessory: PlatformAccessory) => { /
  */
 const handleStateChange = (accessory: PlatformAccessory, characteristic: Characteristic, newValue: any) => { // FIX 6: Updated signature to accept accessory
   // Standardize the payload structure for the frontend
+  // Use a safe cast to get the service name from the parent service object
+  const serviceName = (characteristic.service as any)?.name || 'Unknown Service'; // FIX 4: Using service name for context
   const payload = { 
     type: 'state_change', 
     deviceId: accessory.UUID, // FIX 3 & 6: Use accessory UUID instead of characteristic name/device ID
-    characteristicName: (characteristic.service as any).name || 'Unknown Service', // FIX 4: Using service name for context
+    characteristicName: serviceName, 
     value: newValue 
   };
   console.log('Broadcasting state change:', JSON.stringify(payload));
@@ -40,7 +42,7 @@ const handleStateChange = (accessory: PlatformAccessory, characteristic: Charact
 /**
  * Wraps the standard Characteristic setter to intercept changes and broadcast them.
  */
-const wrapCharacteristic = (characteristic: Characteristic) => {
+const wrapCharacteristic = (characteristic: Characteristic, accessory: PlatformAccessory) => { // FIX 1: Added accessory parameter
   // Check if already wrapped to prevent multiple wrappers
   if ((characteristic as any).__wrapped_setter) {
     return characteristic as any; 
@@ -61,7 +63,7 @@ const wrapCharacteristic = (characteristic: Characteristic) => {
       originalSetter(value);
 
       // Broadcast the change to the local dashboard clients
-      handleStateChange(characteristic.accessory as PlatformAccessory, characteristic, value); // FIX 6: Pass accessory here
+      handleStateChange(accessory, characteristic, value); // FIX 6: Pass accessory here
     } catch (e) {
       console.error('Error setting characteristic value:', e);
     }
@@ -81,7 +83,7 @@ const interceptCharacteristics = (accessory: PlatformAccessory) => {
     // Use Object.values() to get an array of Characteristic objects directly, resolving TS7053/TS18046
     Object.values(service.characteristics).forEach((characteristic: Characteristic) => { 
       // Apply the wrapper function to each characteristic's setter
-      characteristic.setValue = wrapCharacteristic(characteristic).setValue; // Re-assigning the wrapped method
+      characteristic.setValue = wrapCharacteristic(characteristic, accessory).setValue; // Re-assigning the wrapped method and passing accessory
     });
   }
 };
