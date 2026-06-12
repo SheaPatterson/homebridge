@@ -25,10 +25,9 @@ const broadcastStateChange = (payload: any, accessory: PlatformAccessory) => {
 /**
  * Handles state change events and broadcasts them over WebSocket.
  */
-const handleStateChange = (accessory: PlatformAccessory, characteristic: Characteristic, newValue: any) => { // FIX 6: Updated signature to accept accessory
+const handleStateChange = (accessory: PlatformAccessory, service: Service, characteristic: Characteristic, newValue: any) => { // FIX 6: Updated signature to accept parent Service object
   // Standardize the payload structure for the frontend
-  // Use a safe cast to get the service name from the parent service object
-  const serviceName = (characteristic.service as any)?.name || 'Unknown Service'; // FIX 4: Using service name for context
+  const serviceName = service.name || 'Unknown Service'; // FIX 4: Using passed service name
   const payload = { 
     type: 'state_change', 
     deviceId: accessory.UUID, // FIX 3 & 6: Use accessory UUID instead of characteristic name/device ID
@@ -42,7 +41,7 @@ const handleStateChange = (accessory: PlatformAccessory, characteristic: Charact
 /**
  * Wraps the standard Characteristic setter to intercept changes and broadcast them.
  */
-const wrapCharacteristic = (characteristic: Characteristic, accessory: PlatformAccessory) => { // FIX 1: Added accessory parameter
+const wrapCharacteristic = (characteristic: Characteristic, service: Service, accessory: PlatformAccessory) => { // FIX 1: Added service and accessory parameters
   // Check if already wrapped to prevent multiple wrappers
   if ((characteristic as any).__wrapped_setter) {
     return characteristic as any; 
@@ -63,7 +62,7 @@ const wrapCharacteristic = (characteristic: Characteristic, accessory: PlatformA
       originalSetter(value);
 
       // Broadcast the change to the local dashboard clients
-      handleStateChange(accessory, characteristic, value); // FIX 6: Pass accessory here
+      handleStateChange(accessory, service, characteristic, value); // FIX 6: Pass all necessary context (accessory, service)
     } catch (e) {
       console.error('Error setting characteristic value:', e);
     }
@@ -82,8 +81,8 @@ const interceptCharacteristics = (accessory: PlatformAccessory) => {
   for (const service of accessory.services) {
     // Use Object.values() to get an array of Characteristic objects directly, resolving TS7053/TS18046
     Object.values(service.characteristics).forEach((characteristic: Characteristic) => { 
-      // Apply the wrapper function to each characteristic's setter
-      characteristic.setValue = wrapCharacteristic(characteristic, accessory).setValue; // Re-assigning the wrapped method and passing accessory
+      // Apply the wrapper function to each characteristic's setter, passing service context
+      characteristic.setValue = wrapCharacteristic(characteristic, service, accessory).setValue; // Re-assigning the wrapped method and passing service/accessory
     });
   }
 };
