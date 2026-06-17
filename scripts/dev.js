@@ -31,7 +31,7 @@ const backend = spawn(
   {
     cwd: path.join(rootDir, "packages/backend"),
     stdio: "inherit",
-    shell: true,
+    shell: false,
   }
 );
 
@@ -42,7 +42,7 @@ const frontend = spawn(
   {
     cwd: path.join(rootDir, "packages/frontend"),
     stdio: "inherit",
-    shell: true,
+    shell: false,
   }
 );
 
