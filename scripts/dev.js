@@ -16,24 +16,35 @@ for (let i = 0; i < args.length; i++) {
     port = args[i].split("=")[1];
     break;
   } else if (!isNaN(Number(args[i]))) {
-    // Sometimes the port is passed as a raw number argument
     port = args[i];
   }
 }
 
 console.log(`[Dev System] Starting backend and frontend (port: ${port})...`);
 
-// Spawn backend
-const backend = spawn("npm", ["run", "dev", "-w", "@smart-home/backend"], {
-  stdio: "inherit",
-  shell: true,
-});
+const rootDir = path.resolve(__dirname, "..");
 
-// Spawn frontend with the specified port
-const frontend = spawn("npm", ["run", "dev", "-w", "@smart-home/frontend", "--", "--port", port], {
-  stdio: "inherit",
-  shell: true,
-});
+// Spawn backend using root ts-node loader
+const backend = spawn(
+  "node",
+  ["--no-warnings", "--loader", "ts-node/esm", "src/index.ts"],
+  {
+    cwd: path.join(rootDir, "packages/backend"),
+    stdio: "inherit",
+    shell: true,
+  }
+);
+
+// Spawn frontend using root vite binary
+const frontend = spawn(
+  "node",
+  [path.join(rootDir, "node_modules/vite/bin/vite.js"), "--port", port],
+  {
+    cwd: path.join(rootDir, "packages/frontend"),
+    stdio: "inherit",
+    shell: true,
+  }
+);
 
 // Handle termination
 const cleanup = () => {
