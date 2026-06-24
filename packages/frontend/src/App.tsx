@@ -68,19 +68,73 @@ function App() {
     return () => clearInterval(intervalId); // Cleanup on unmount
   }, []);
 
+  /**
+   * Handles toggling a device's state by calling the backend API.
+   */
+  const handleDeviceToggle = async (deviceId: string, currentIsOn: boolean) => {
+    if (isFetching) return;
+
+    // Optimistic update: immediately flip the UI state
+    updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+        devices: {
+            ...prev.devices,
+            [deviceId]: { ...prev.devices![deviceId], isOn: !currentIsOn }
+        }
+    }));
+
+    try {
+      const res = await fetch(`/api/device/${deviceId}/toggle`, {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ toggle: !currentIsOn })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to update device state: ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      if (data.success && data.newState !== undefined) {
+          // Final confirmation of the state change from the backend
+          updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+              devices: {
+                  ...prev.devices,
+                  [deviceId]: { ...prev.devices![deviceId], isOn: data.newState }
+              }
+          }));
+      } else {
+          throw new Error("Backend reported failure to update state.");
+      }
+
+    } catch (error) {
+      console.error("Device toggle failed:", error);
+      // Revert the optimistic update on failure
+      updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+        devices: {
+            ...prev.devices,
+            [deviceId]: { ...prev.devices![deviceId], isOn: currentIsOn } // Revert to original state
+        }
+    }));
+      alert("Failed to control device. Please check the console for details.");
+    }
+  };
+
   // Helper component for displaying device controls
   const DeviceCard: React.FC<{ device: DeviceState }> = ({ device }) => {
     const toggleStyle = device.isOn ? "bg-emerald-600" : "bg-slate-700";
     return (
       <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center">
         <div>
-          <h3 className="font-semibold text-lg">{device.name}</h3>
+          <h3 className="font-semibold text-lg">{device.name}</h3 >
           <p className="text-sm text-slate-400">{device.type}</p>
         </div>
         {/* Simple toggle switch placeholder */}
         <button 
-            onClick={() => { /* Future: Call API to toggle device state */ }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${toggleStyle} focus:outline-none`}
+            onClick={() => handleDeviceToggle(device.id, device.isOn)}
+            disabled={isFetching}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${toggleStyle} focus:outline-none disabled:opacity-50`}
         >
             <span className="inline-block h-4 w-4 transform transition-transform bg-white rounded-full translate-x-full shadow"></span>
         </button>
@@ -122,7 +176,7 @@ function App() {
                 <AlertCircle className="w-4 h-4" /> Offline
               </span>
             )}
-          </div>
+          </div >
 
           {appState.error && (
             <div className="p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-400 text-sm">
@@ -137,14 +191,14 @@ function App() {
               <div className="flex justify-between">
                 <span className="text-slate-400">Status Code</span>
                 <span className="font-mono text-emerald-400">{appState.healthStatus.status}</span>
-              </div> >
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Last Check</span>
                 <span className="font-mono text-slate-300">
                   {new Date(appState.healthStatus.timestamp).toLocaleTimeString()}
                 </span>
               </div>
-            </div>
+            </div >
           )}
         </div >
 
@@ -156,11 +210,11 @@ function App() {
                     <DeviceCard key={device.id} device={device} />
                 ))}
             </div>
-        </div>
+        </div >
 
         <div className="mt-8 text-center text-xs text-slate-500">
           Phase 1: State Management & Device Integration Complete
-        </div> >
+        </div>
       </div>
     </div >
   );
