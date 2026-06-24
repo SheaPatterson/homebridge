@@ -12,7 +12,8 @@ export interface DeviceState {
   isOn: boolean;
   brightness?: number;
   temperature?: number;
-  lastUpdated: number; // Added lastUpdated field
+  room: string; // Added room property for grouping
+  lastUpdated: number;
 }
 
 /**

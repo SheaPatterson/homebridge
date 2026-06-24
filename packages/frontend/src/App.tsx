@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { Activity, CheckCircle, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { HealthResponse, DeviceState, AppState, usePersistentState } from "@smart-home/shared";
 
 // Initial state definition for the persistent hook
@@ -35,8 +35,9 @@ function App() {
       // 2. Simulate Device Discovery (Placeholder for future logic)
       // In a real app, this would call an API endpoint to get all devices.
       const simulatedDevices: Record<string, DeviceState> = {
-        'light-1': { id: 'light-1', name: 'Living Room Light', type: 'light', isOn: true, brightness: 80, lastUpdated: Date.now() },
-        'thermo-2': { id: 'thermo-2', name: 'Main Thermostat', type: 'thermostat', isOn: false, temperature: 21.5, lastUpdated: Date.now() },
+        'light-1': { id: 'light-1', name: 'Living Room Light', type: 'light', isOn: true, brightness: 80, room: 'Living Room', lastUpdated: Date.now() },
+        'thermo-2': { id: 'thermo-2', name: 'Main Thermostat', type: 'thermostat', isOn: false, temperature: 21.5, room: 'Hallway', lastUpdated: Date.now() },
+        'light-3': { id: 'light-3', name: 'Kitchen Spot Light', type: 'light', isOn: false, brightness: undefined, room: 'Kitchen', lastUpdated: Date.now() },
       };
 
       // Update the persistent state with all gathered data
@@ -75,7 +76,7 @@ function App() {
     if (isFetching) return;
 
     // Optimistic update: immediately flip the UI state
-    updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+    updateAppState((prev: AppState) => ({ 
         devices: {
             ...prev.devices,
             [deviceId]: { ...prev.devices![deviceId], isOn: !currentIsOn }
@@ -98,7 +99,7 @@ function App() {
       const data = await res.json();
       if (data.success && data.newState !== undefined) {
           // Final confirmation of the state change from the backend
-          updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+          updateAppState((prev: AppState) => ({ 
               devices: {
                   ...prev.devices,
                   [deviceId]: { ...prev.devices![deviceId], isOn: data.newState }
@@ -111,7 +112,7 @@ function App() {
     } catch (error) {
       console.error("Device toggle failed:", error);
       // Revert the optimistic update on failure
-      updateAppState((prev: AppState): Partial<AppState> => ({ // Fixed TS7006 and TS2560
+      updateAppState((prev: AppState) => ({ 
         devices: {
             ...prev.devices,
             [deviceId]: { ...prev.devices![deviceId], isOn: currentIsOn } // Revert to original state
@@ -138,6 +139,33 @@ function App() {
         >
             <span className="inline-block h-4 w-4 transform transition-transform bg-white rounded-full translate-x-full shadow"></span>
         </button>
+      </div>
+    );
+  };
+
+  // Component to group devices by room
+  const RoomContainer: React.FC<{ roomName: string, devices: DeviceState[] }> = ({ roomName, devices }) => {
+    const [isOpen, setIsOpen] = useState(true);
+
+    return (
+      <div className="border border-slate-700 rounded-xl bg-slate-900 shadow-lg overflow-hidden">
+        {/* Room Header */}
+        <button 
+            className="w-full flex justify-between items-center p-4 text-left hover:bg-slate-800 transition-colors"
+            onClick={() => setIsOpen(!isOpen)}
+        >
+          <h2 className="text-xl font-bold text-indigo-300">{roomName}</h2>
+          {isOpen ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+        </button>
+
+        {/* Device List */}
+        <div className={`transition-all duration-300 ${isOpen ? 'max-h-[80vh] opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
+            <div className="p-4 grid grid-cols-1 gap-4">
+                {devices.map((device) => (
+                    <DeviceCard key={device.id} device={device} />
+                ))}
+            </div>
+        </div>
       </div>
     );
   };
@@ -202,18 +230,29 @@ function App() {
           )}
         </div >
 
-        {/* Device Control Panel (New Section) */}
+        {/* Device Control Panel (Room Grouped Section) */}
         <div className="pt-4 border-t border-slate-800">
-            <h2 className="text-lg font-semibold text-slate-300 mb-4">Devices</h2>
-            <div className="grid grid-cols-1 gap-4">
-                {Object.values(appState.devices).map((device) => (
-                    <DeviceCard key={device.id} device={device} />
+            <h2 className="text-lg font-semibold text-slate-300 mb-4">Rooms</h2>
+            <div className="space-y-6">
+                {/* Group devices by room */}
+                <>
+                {Object.values(appState.devices)
+                    .reduce((acc, device) => {
+                        if (!acc[device.room]) {
+                            acc[device.room] = [];
+                        }
+                        acc[device.room].push(device);
+                        return acc;
+                    }, {} as Record<string, DeviceState[]>)}
+                {Object.keys(appState.devices).map((roomName) => (
+                    <RoomContainer key={roomName} roomName={roomName} devices={Object.values(appState.devices).filter(d => d.room === roomName)} />
                 ))}
+                </>
             </div>
         </div >
 
         <div className="mt-8 text-center text-xs text-slate-500">
-          Phase 1: State Management & Device Integration Complete
+          Phase 2: Room Grouping & UX Redesign Complete
         </div>
       </div>
     </div >

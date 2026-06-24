@@ -48,7 +48,7 @@ app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
     // Get current state to determine the new state
     let currentState: boolean;
     try {
-        currentState = await lightService.getCharacteristic(Characteristic.On).getVal();
+        currentState = await lightService.getCharacteristic(Characteristic.On).getValue(); // FIX: Using getValue() as it is the correct async getter method for HAP-NodeJS
     } catch (e) {
         console.error("Error getting initial state:", e);
         return res.status(500).json({ success: false, message: "Could not read current device state." });
