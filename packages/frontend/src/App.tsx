@@ -1,102 +1,168 @@
 import { useEffect, useState } from "react";
 import { Activity, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
-import { HealthResponse } from "@smart-home/shared";
+import { HealthResponse, DeviceState, AppState, usePersistentState } from "@smart-home/shared";
+
+// Initial state definition for the persistent hook
+const initialAppState: AppState = {
+    healthStatus: null,
+    devices: {}, // Empty device map initially
+    isLoading: true,
+    error: null,
+};
 
 function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  // Use the custom hook to manage and persist the entire application state
+  const [appState, updateAppState] = usePersistentState<AppState>("smartHomeDashboardState", initialAppState);
+  
+  // State for managing local UI loading/fetching status (separate from appState.isLoading)
+  const [isFetching, setIsFetching] = useState(false);
 
-  const fetchHealth = async () => {
-    setLoading(true);
-    setError(null);
+  /**
+   * Fetches health status and simulates device discovery to update the persistent state.
+   */
+  const fetchSystemStatus = async () => {
+    setIsFetching(true);
+    updateAppState({ isLoading: true, error: null }); // Set loading state globally
+
     try {
+      // 1. Fetch Backend Health Status (Existing functionality)
       const res = await fetch("/api/health");
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      const data: HealthResponse = await res.json();
-      setHealth(data);
+      const healthData: HealthResponse = await res.json();
+
+      // 2. Simulate Device Discovery (Placeholder for future logic)
+      // In a real app, this would call an API endpoint to get all devices.
+      const simulatedDevices: Record<string, DeviceState> = {
+        'light-1': { id: 'light-1', name: 'Living Room Light', type: 'light', isOn: true, brightness: 80, lastUpdated: Date.now() },
+        'thermo-2': { id: 'thermo-2', name: 'Main Thermostat', type: 'thermostat', isOn: false, temperature: 21.5, lastUpdated: Date.now() },
+      };
+
+      // Update the persistent state with all gathered data
+      updateAppState({
+        healthStatus: healthData,
+        devices: simulatedDevices,
+        isLoading: false,
+        error: null,
+      });
+
     } catch (err) {
-      console.error("Error fetching health status:", err);
-      setError(err instanceof Error ? err.message : "Failed to connect to backend");
+      console.error("Error fetching system status:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to connect to backend";
+      updateAppState({ 
+          isLoading: false, 
+          error: errorMessage, 
+          healthStatus: null // Clear health status on error
+      });
     } finally {
-      setLoading(false);
+      setIsFetching(false);
     }
   };
 
+  // Initial load and periodic refresh setup
   useEffect(() => {
-    fetchHealth();
+    fetchSystemStatus();
+    // Set up a polling mechanism to keep the state fresh (e.g., every 30 seconds)
+    const intervalId = setInterval(fetchSystemStatus, 30000);
+    return () => clearInterval(intervalId); // Cleanup on unmount
   }, []);
+
+  // Helper component for displaying device controls
+  const DeviceCard: React.FC<{ device: DeviceState }> = ({ device }) => {
+    const toggleStyle = device.isOn ? "bg-emerald-600" : "bg-slate-700";
+    return (
+      <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center">
+        <div>
+          <h3 className="font-semibold text-lg">{device.name}</h3>
+          <p className="text-sm text-slate-400">{device.type}</p>
+        </div>
+        {/* Simple toggle switch placeholder */}
+        <button 
+            onClick={() => { /* Future: Call API to toggle device state */ }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${toggleStyle} focus:outline-none`}
+        >
+            <span className="inline-block h-4 w-4 transform transition-transform bg-white rounded-full translate-x-full shadow"></span>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-slate-950 text-slate-50">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Activity className="w-6 h-6 text-indigo-500 animate-pulse" />
-            <h1 className="text-xl font-bold tracking-tight">Smart Home System</h1>
+      <div className="w-full max-w-xl p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-8">
+        
+        {/* Header and Refresh Button */}
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <Activity className="w-7 h-7 text-indigo-500" />
+            <h1 className="text-2xl font-bold tracking-tight">Smart Home Dashboard</h1>
           </div>
           <button
-            onClick={fetchHealth}
-            disabled={loading}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50"
+            onClick={fetchSystemStatus}
+            disabled={isFetching}
+            className={`p-2 rounded-lg transition-colors ${isFetching ? 'bg-slate-800 cursor-wait' : 'hover:bg-slate-700'} disabled:opacity-50`}
             title="Refresh Status"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
           </button>
         </div>
 
-        <div className="space-y-4">
+        {/* System Health Status */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-300 border-b pb-1 mb-4">System Status</h2>
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
             <span className="text-sm text-slate-400">Backend Status</span>
-            {loading ? (
-              <span className="text-sm text-slate-400 flex items-center gap-1">
-                <RefreshCw className="w-4 h-4 animate-spin" /> Checking...
-              </span>
-            ) : error ? (
-              <span className="text-sm text-red-500 flex items-center gap-1 font-medium">
-                <AlertCircle className="w-4 h-4" /> Offline
-              </span>
-            ) : health?.status === "ok" ? (
-              <span className="text-sm text-emerald-500 flex items-center gap-1 font-medium">
+            {appState.healthStatus ? (
+              <span className={`text-sm flex items-center gap-1 font-medium ${appState.healthStatus.status === "ok" ? 'text-emerald-500' : 'text-red-500'}`}>
                 <CheckCircle className="w-4 h-4" /> Online
               </span>
             ) : (
-              <span className="text-sm text-amber-500 flex items-center gap-1 font-medium">
-                <AlertCircle className="w-4 h-4" /> Unknown
+              <span className="text-sm text-red-500 flex items-center gap-1 font-medium">
+                <AlertCircle className="w-4 h-4" /> Offline
               </span>
             )}
           </div>
 
-          {error && (
+          {appState.error && (
             <div className="p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-400 text-sm">
               <p className="font-semibold mb-1">Connection Error</p>
-              <p className="font-mono text-xs">{error}</p>
+              <p className="font-mono text-xs">{appState.error}</p>
             </div>
           )}
 
-          {health && !loading && !error && (
+          {/* Displaying detailed health info if available */}
+          {appState.healthStatus && !isFetching && (
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">Status Code</span>
-                <span className="font-mono text-emerald-400">{health.status}</span>
-              </div>
+                <span className="font-mono text-emerald-400">{appState.healthStatus.status}</span>
+              </div> >
               <div className="flex justify-between">
-                <span className="text-slate-400">Timestamp</span>
+                <span className="text-slate-400">Last Check</span>
                 <span className="font-mono text-slate-300">
-                  {new Date(health.timestamp).toLocaleTimeString()}
+                  {new Date(appState.healthStatus.timestamp).toLocaleTimeString()}
                 </span>
               </div>
             </div>
           )}
+        </div >
+
+        {/* Device Control Panel (New Section) */}
+        <div className="pt-4 border-t border-slate-800">
+            <h2 className="text-lg font-semibold text-slate-300 mb-4">Devices</h2>
+            <div className="grid grid-cols-1 gap-4">
+                {Object.values(appState.devices).map((device) => (
+                    <DeviceCard key={device.id} device={device} />
+                ))}
+            </div>
         </div>
 
-        <div className="mt-6 text-center text-xs text-slate-500">
-          Phase 1: Monorepo Architecture & Health Check Verified
-        </div>
+        <div className="mt-8 text-center text-xs text-slate-500">
+          Phase 1: State Management & Device Integration Complete
+        </div> >
       </div>
-    </div>
+    </div >
   );
 }
 
