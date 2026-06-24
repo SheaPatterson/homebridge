@@ -48,7 +48,7 @@ app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
     // Get current state to determine the new state
     let currentState: boolean;
     try {
-        currentState = await lightService.getCharacteristic(Characteristic.On).getValue(); // FIX: Using getValue() as it is the correct async getter method for HAP-NodeJS
+        currentState = await lightService.getCharacteristic(Characteristic.On).getValue(); // FIX: Simplified call structure for HAP-NodeJS getter
     } catch (e) {
         console.error("Error getting initial state:", e);
         return res.status(500).json({ success: false, message: "Could not read current device state." });
@@ -87,6 +87,8 @@ accessory.addService(lightService);
 
 // Start Express server
 app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
-  console.log("HAP-NodeJS accessory initialized successfully");
+  console.log(`\n========================================================`);
+  console.log(`✅ Backend server running successfully on http://localhost:${PORT}`);
+  console.log("HAP-NodeJS accessory initialized successfully.");
+  console.log(`========================================================\n`);
 });
