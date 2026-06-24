@@ -6,7 +6,18 @@ import { HealthResponse } from "@smart-home/shared";
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+const corsOptions = {
+  origin: function (origin: any) {
+    // Allow requests from localhost:3000 (frontend dev server) and any origin for simplicity during development
+    if (!origin || ['localhost:3000', '::1'].includes(typeof origin === 'string' ? origin : '')) {
+      return true;
+    }
+    return false;
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Health check endpoint
