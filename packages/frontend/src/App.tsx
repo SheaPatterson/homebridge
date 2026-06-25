@@ -76,12 +76,12 @@ function App() {
     if (isFetching) return;
 
     // Optimistic update: immediately flip the UI state
-    updateAppState((prev: AppState) => ({ 
+    updateAppState({
         devices: {
-            ...prev.devices,
-            [deviceId]: { ...prev.devices![deviceId], isOn: !currentIsOn }
+            ...appState.devices,
+            [deviceId]: { ...appState.devices[deviceId], isOn: !currentIsOn }
         }
-    }));
+    });
 
     try {
       const res = await fetch(`/api/device/${deviceId}/toggle`, {
@@ -99,12 +99,12 @@ function App() {
       const data = await res.json();
       if (data.success && data.newState !== undefined) {
           // Final confirmation of the state change from the backend
-          updateAppState((prev: AppState) => ({ 
+          updateAppState({
               devices: {
-                  ...prev.devices,
-                  [deviceId]: { ...prev.devices![deviceId], isOn: data.newState }
+                  ...appState.devices,
+                  [deviceId]: { ...appState.devices[deviceId], isOn: data.newState }
               }
-          }));
+          });
       } else {
           throw new Error("Backend reported failure to update state.");
       }
@@ -112,12 +112,12 @@ function App() {
     } catch (error) {
       console.error("Device toggle failed:", error);
       // Revert the optimistic update on failure
-      updateAppState((prev: AppState) => ({ 
+      updateAppState({
         devices: {
-            ...prev.devices,
-            [deviceId]: { ...prev.devices![deviceId], isOn: currentIsOn } // Revert to original state
+            ...appState.devices,
+            [deviceId]: { ...appState.devices[deviceId], isOn: currentIsOn } // Revert to original state
         }
-    }));
+    });
       alert("Failed to control device. Please check the console for details.");
     }
   };
