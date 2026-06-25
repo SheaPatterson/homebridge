@@ -8,7 +8,7 @@ import {
   Service,
   uuid,
 } from "hap-nodejs";
-import { HealthResponse } from "@smart-home/shared";
+import { HealthResponse, DeviceState } from "@smart-home/shared";
 
 const app = express();
 const PORT = 3001;
@@ -24,6 +24,37 @@ app.use(express.json());
 // --- In-memory state for the test HAP accessory ---
 let lightIsOn = false;
 
+// --- Simulated Device Discovery Data (Replaces hardcoded seeding) ---
+const simulatedDevices: DeviceState[] = [
+    {
+        id: "light-1",
+        name: "Living Room Light",
+        type: "light",
+        isOn: true,
+        brightness: 80,
+        room: "Living Room",
+        lastUpdated: Date.now(),
+    },
+    {
+        id: "thermo-2",
+        name: "Main Thermostat",
+        type: "thermostat",
+        isOn: false,
+        temperature: 21.5,
+        room: "Hallway",
+        lastUpdated: Date.now(),
+    },
+    {
+        id: "light-3",
+        name: "Kitchen Spot Light",
+        type: "light",
+        isOn: false,
+        brightness: undefined,
+        room: "Kitchen",
+        lastUpdated: Date.now(),
+    },
+];
+
 // --- Health endpoint ---
 app.get("/api/health", (_req: Request, res: Response) => {
   const response: HealthResponse = {
@@ -32,6 +63,17 @@ app.get("/api/health", (_req: Request, res: Response) => {
   };
   res.json(response);
 });
+
+// --- Device discovery endpoint (NEW) ---
+app.get("/api/devices", (_req: Request, res: Response) => {
+    const devices: Record<string, DeviceState> = simulatedDevices.reduce((acc, device) => {
+        acc[device.id] = device;
+        return acc;
+    }, {} as Record<string, DeviceState>);
+
+    res.json(devices);
+});
+
 
 // --- Device toggle endpoint ---
 app.post("/api/device/:id/toggle", (req: Request, res: Response) => {

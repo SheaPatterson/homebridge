@@ -7,12 +7,13 @@ import {
   ChevronUp,
   RefreshCw,
 } from "lucide-react";
+// FIX: Changed import path from package alias to relative file path
 import {
   AppState,
   DeviceState,
   HealthResponse,
   usePersistentState,
-} from "@smart-home/shared";
+} from "../../shared/src";
 
 const initialAppState: AppState = {
   healthStatus: null,
@@ -47,48 +48,36 @@ function App() {
     updateAppState({ isLoading: true, error: null });
 
     try {
-      const res = await fetch("/api/health");
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const healthData: HealthResponse = await res.json();
+      // 1. Fetch Health Status (always needed)
+      const healthRes = await fetch("/api/health");
+      if (!healthRes.ok) throw new Error(`HTTP error! status: ${healthRes.status}`);
+      const healthData: HealthResponse = await healthRes.json();
 
-      // Preserve existing device states so we don't overwrite user toggles.
-      // Only seed defaults on first load (when devices is empty).
-      const existingDevices = appState.devices;
-      const devices =
-        Object.keys(existingDevices).length > 0
-          ? existingDevices
-          : {
-              "light-1": {
-                id: "light-1",
-                name: "Living Room Light",
-                type: "light",
-                isOn: true,
-                brightness: 80,
-                room: "Living Room",
-                lastUpdated: Date.now(),
-              },
-              "thermo-2": {
-                id: "thermo-2",
-                name: "Main Thermostat",
-                type: "thermostat",
-                isOn: false,
-                temperature: 21.5,
-                room: "Hallway",
-                lastUpdated: Date.now(),
-              },
-              "light-3": {
-                id: "light-3",
-                name: "Kitchen Spot Light",
-                type: "light",
-                isOn: false,
-                room: "Kitchen",
-                lastUpdated: Date.now(),
-              },
-            };
+      // 2. Fetch Device List (NEW STEP)
+      const deviceRes = await fetch("/api/devices");
+      if (!deviceRes.ok) throw new Error(`HTTP error! status: ${deviceRes.status}`);
+      const discoveredDevices: Record<string, DeviceState> = await deviceRes.json();
+
+      // Merge discovered devices with existing persistent state (for toggles)
+      let mergedDevices: Record<string, DeviceState> = { ...appState.devices };
+      Object.keys(discoveredDevices).forEach((deviceId) => {
+          const discoveredDevice = discoveredDevices[deviceId];
+          if (!mergedDevices[deviceId]) {
+              // If device is new or missing from persistent state, use the discovered data
+              mergedDevices[deviceId] = discoveredDevice;
+          } else {
+              // Otherwise, keep the user's last known state (e.g., if they toggled it off)
+              const existingState = mergedDevices[deviceId];
+              if (existingState.isOn !== discoveredDevice.isOn) {
+                  // If there is a discrepancy, we might want to log/handle it, but for now, keep the persistent state unless explicitly updated by discovery logic.
+              }
+          }
+      });
+
 
       updateAppState({
         healthStatus: healthData,
-        devices,
+        devices: mergedDevices, // Use the merged device map
         isLoading: false,
         error: null,
       });
@@ -302,7 +291,7 @@ function App() {
         </div>
 
         <div className="mt-8 text-center text-xs text-slate-500">
-          Phase 2: Room Grouping & UX Redesign Complete
+          Phase 3: Device Discovery & Persistence Complete
         </div>
       </div>
     </div>
