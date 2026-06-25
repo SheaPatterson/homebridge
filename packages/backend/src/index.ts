@@ -1,17 +1,11 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
-import {
-  Accessory,
-  Categories,
-  Characteristic,
-  CharacteristicEventTypes,
-  Service,
-  uuid,
-} from "hap-nodejs";
-import { HealthResponse, DeviceState } from "@smart-home/shared";
+import { Accessory, Categories, Characteristic, CharacteristicEventTypes, Service, uuid } from "hap-nodejs";
+import { getDbPool, fetchDevicesFromDb, updateDeviceStateInDb } from "./db";
 
 const app = express();
 const PORT = 3001;
+const PROJECT_ID = process.env.NEON_PROJECT_ID || "old-band-37207234"; // Using the provided ID
 
 app.use(
   cors({
@@ -21,78 +15,10 @@ app.use(
 );
 app.use(express.json());
 
-// --- In-memory state for the test HAP accessory ---
+
+// --- HAP-NodeJS accessory setup (Kept for compatibility) ---
 let lightIsOn = false;
 
-// --- Simulated Device Discovery Data (Replaces hardcoded seeding) ---
-const simulatedDevices: DeviceState[] = [
-    {
-        id: "light-1",
-        name: "Living Room Light",
-        type: "light",
-        isOn: true,
-        brightness: 80,
-        room: "Living Room",
-        lastUpdated: Date.now(),
-    },
-    {
-        id: "thermo-2",
-        name: "Main Thermostat",
-        type: "thermostat",
-        isOn: false,
-        temperature: 21.5,
-        room: "Hallway",
-        lastUpdated: Date.now(),
-    },
-    {
-        id: "light-3",
-        name: "Kitchen Spot Light",
-        type: "light",
-        isOn: false,
-        brightness: undefined,
-        room: "Kitchen",
-        lastUpdated: Date.now(),
-    },
-];
-
-// --- Health endpoint ---
-app.get("/api/health", (_req: Request, res: Response) => {
-  const response: HealthResponse = {
-    status: "ok",
-    timestamp: Date.now(),
-  };
-  res.json(response);
-});
-
-// --- Device discovery endpoint (NEW) ---
-app.get("/api/devices", (_req: Request, res: Response) => {
-    const devices: Record<string, DeviceState> = simulatedDevices.reduce((acc, device) => {
-        acc[device.id] = device;
-        return acc;
-    }, {} as Record<string, DeviceState>);
-
-    res.json(devices);
-});
-
-
-// --- Device toggle endpoint ---
-app.post("/api/device/:id/toggle", (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  if (id !== "light-1") {
-    return res
-      .status(404)
-      .json({ success: false, message: `Device ${id} not found.` });
-  }
-
-  // Toggle the in-memory state and notify any HAP listeners.
-  lightIsOn = !lightIsOn;
-  console.log(`[Backend] Device ${id} toggled -> ${lightIsOn}`);
-
-  return res.json({ success: true, newState: lightIsOn });
-});
-
-// --- HAP-NodeJS accessory setup ---
 const accessoryUuid = uuid.generate("hap-nodejs:accessories:test-light");
 const accessory = new Accessory("Test Light", accessoryUuid);
 accessory.publish({
@@ -117,6 +43,70 @@ lightService
   });
 
 accessory.addService(lightService);
+
+
+// --- API Endpoints ---
+
+/**
+ * Health check endpoint.
+ */
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok", timestamp: Date.now() });
+});
+
+/**
+ * Device discovery endpoint (NEW). Fetches all devices from the database.
+ */
+app.get("/api/devices", async (_req: Request, res: Response) => {
+    try {
+        const pool = getDbPool(PROJECT_ID);
+        // Fetch data from Neon DB instead of using hardcoded array
+        const devices = await fetchDevicesFromDb(pool); 
+
+        res.json(devices);
+    } catch (error) {
+        console.error("Error fetching devices:", error);
+        res.status(500).json({ success: false, message: "Failed to retrieve device list from database." });
+    }
+});
+
+
+/**
+ * Device control endpoint. Updates the state in the database and simulates HAP notification.
+ */
+app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const pool = getDbPool(PROJECT_ID);
+    // 1. Fetch current state to determine the new state
+    const devices = await fetchDevicesFromDb(pool);
+    const device = devices.find((d: any) => d.device_id === id);
+
+    if (!device) {
+      return res.status(404).json({ success: false, message: `Device ${id} not found.` });
+    }
+
+    // 2. Determine new state and update DB
+    const newState = !device.is_on;
+    await updateDeviceStateInDb(pool, id, { is_on: newState });
+
+    console.log(`[Backend] Device ${id} toggled -> ${newState}`);
+
+    // 3. Simulate HAP notification (if applicable)
+    if (id === "light-1") {
+        // In a real scenario, we would call the HAP service API here.
+        console.log("[HAP] Simulating state change for Test Lightbulb.");
+    }
+
+    res.json({ success: true, newState: newState });
+
+  } catch (error) {
+    console.error("Device toggle failed:", error);
+    res.status(500).json({ success: false, message: "Failed to update device state." });
+  }
+});
+
 
 // --- Start server ---
 app.listen(PORT, () => {

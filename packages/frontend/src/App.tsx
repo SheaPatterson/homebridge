@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
+  Zap, // Added Zap icon for better visual appeal
 } from "lucide-react";
 // FIX: Changed import path from package alias to relative file path
 import {
@@ -66,10 +67,10 @@ function App() {
               // If device is new or missing from persistent state, use the discovered data
               mergedDevices[deviceId] = discoveredDevice;
           } else {
-              // Otherwise, keep the user's last known state (e.g., if they toggled it off)
+              // Keep the user's last known state (e.g., if they toggled it off)
               const existingState = mergedDevices[deviceId];
               if (existingState.isOn !== discoveredDevice.isOn) {
-                  // If there is a discrepancy, we might want to log/handle it, but for now, keep the persistent state unless explicitly updated by discovery logic.
+                  // We prioritize persistent state for better UX continuity
               }
           }
       });
@@ -86,7 +87,7 @@ function App() {
       console.error("Error fetching system status:", err);
       updateAppState({
         isLoading: false,
-        error: message,
+        error: `Failed to connect or retrieve data: ${message}`,
         healthStatus: null,
       });
     } finally {
@@ -147,7 +148,7 @@ function App() {
           [deviceId]: { ...appState.devices[deviceId], isOn: currentIsOn },
         },
       });
-      window.alert("Failed to control device. Check the console for details.");
+      window.alert(`Failed to control device ${deviceId}. Check the console for details.`);
     }
   };
 
@@ -155,8 +156,8 @@ function App() {
     const toggleStyle = device.isOn ? "bg-emerald-600" : "bg-slate-700";
     const translateClass = device.isOn ? "translate-x-6" : "translate-x-1";
     return (
-      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-4">
-        <div>
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-4 transition duration-200 hover:border-indigo-700/50">
+        <div className="flex flex-col">
           <h3 className="text-lg font-semibold">{device.name}</h3>
           <p className="text-sm capitalize text-slate-400">{device.type}</p>
         </div>
@@ -170,7 +171,7 @@ function App() {
             className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${translateClass}`}
           />
         </button>
-      </div>
+      </div >
     );
   };
 
@@ -183,9 +184,10 @@ function App() {
   }) => {
     const [isOpen, setIsOpen] = useState(true);
     return (
-      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-lg">
+      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl transition-all duration-300">
+        {/* Header Button */}
         <button
-          className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-slate-800"
+          className="flex w-full items-center justify-between p-5 text-left transition-colors hover:bg-slate-800 focus:outline-none"
           onClick={() => setIsOpen((o) => !o)}
         >
           <h2 className="text-xl font-bold text-indigo-300">{roomName}</h2>
@@ -195,8 +197,9 @@ function App() {
             <ChevronDown className="h-5 w-5 text-slate-400" />
           )}
         </button>
+        {/* Content Area */}
         <div
-          className={`grid gap-4 p-4 transition-all duration-300 ${
+          className={`grid gap-4 p-5 transition-all duration-300 ${
             isOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
           } overflow-hidden`}
         >
@@ -210,7 +213,7 @@ function App() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 p-6 text-slate-50">
-      <div className="w-full max-w-xl space-y-8 rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+      <div className="w-full max-w-xl space-y-8 rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
@@ -222,7 +225,7 @@ function App() {
           <button
             onClick={fetchSystemStatus}
             disabled={isFetching}
-            className="rounded-lg p-2 transition-colors hover:bg-slate-700 disabled:opacity-50"
+            className={`rounded-lg p-2 transition-colors ${isFetching ? 'cursor-wait' : 'hover:bg-slate-700'} disabled:opacity-50`}
             title="Refresh Status"
           >
             <RefreshCw
@@ -233,10 +236,8 @@ function App() {
 
         {/* System Status */}
         <div className="space-y-2">
-          <h2 className="border-b pb-1 text-lg font-semibold text-slate-300">
-            System Status
-          </h2>
-          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-4">
+          <h2 className="border-b border-slate-800 pb-1 text-lg font-semibold text-slate-300 flex items-center gap-2"><Zap className='w-5 h-5'/> System Status</h2>
+          <div className={`flex items-center justify-between rounded-xl p-4 ${appState.error ? 'border-red-700/50 bg-red-950/30' : 'border-slate-800 bg-slate-950'} border`}>
             <span className="text-sm text-slate-400">Backend Status</span>
             {appState.healthStatus ? (
               <span className="flex items-center gap-1 text-sm font-medium text-emerald-500">
@@ -247,7 +248,7 @@ function App() {
                 <AlertCircle className="h-4 w-4" /> Offline
               </span>
             )}
-          </div>
+          </div >
 
           {appState.error && (
             <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
@@ -272,14 +273,14 @@ function App() {
               </div>
             </div>
           )}
-        </div>
+        </div >
 
         {/* Rooms */}
         <div className="border-t border-slate-800 pt-4">
-          <h2 className="mb-4 text-lg font-semibold text-slate-300">Rooms</h2>
+          <h2 className="mb-4 text-lg font-semibold text-slate-300 flex items-center gap-2"><Zap className='w-5 h-5'/> Devices by Room</h2>
           {Object.keys(devicesByRoom).length === 0 ? (
             <p className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-center text-sm text-slate-500">
-              No devices discovered yet.
+              No devices discovered yet. Check the backend logs for connection errors.
             </p>
           ) : (
             <div className="space-y-6">
@@ -288,10 +289,10 @@ function App() {
               ))}
             </div>
           )}
-        </div>
+        </div >
 
         <div className="mt-8 text-center text-xs text-slate-500">
-          Phase 3: Device Discovery & Persistence Complete
+          Phase 4: UX Redesign Complete. State is persistent and database-backed.
         </div>
       </div>
     </div>
