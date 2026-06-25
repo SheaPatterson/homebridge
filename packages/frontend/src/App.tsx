@@ -1,224 +1,279 @@
-import { useEffect, useState } from "react";
-import { Activity, CheckCircle, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
-import { HealthResponse, DeviceState, AppState, usePersistentState } from "@smart-home/shared";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+} from "lucide-react";
+import {
+  AppState,
+  DeviceState,
+  HealthResponse,
+  usePersistentState,
+} from "@smart-home/shared";
 
-// Initial state definition for the persistent hook
 const initialAppState: AppState = {
-    healthStatus: null,
-    devices: {}, // Empty device map initially
-    isLoading: true,
-    error: null,
+  healthStatus: null,
+  devices: {},
+  isLoading: true,
+  error: null,
 };
 
+const STORAGE_KEY = "smartHomeDashboardState";
+
 function App() {
-  // Use the custom hook to manage and persist the entire application state
-  const [appState, updateAppState] = usePersistentState<AppState>("smartHomeDashboardState", initialAppState);
-  
-  // State for managing local UI loading/fetching status (separate from appState.isLoading)
+  const [appState, updateAppState] = usePersistentState<AppState>(
+    STORAGE_KEY,
+    initialAppState,
+  );
   const [isFetching, setIsFetching] = useState(false);
 
-  /**
-   * Fetches health status and simulates device discovery to update the persistent state.
-   */
+  // Group devices by room. Memoized so it only recomputes when devices change.
+  const devicesByRoom = useMemo(() => {
+    return Object.values(appState.devices).reduce<Record<string, DeviceState[]>>(
+      (acc, device) => {
+        if (!acc[device.room]) acc[device.room] = [];
+        acc[device.room].push(device);
+        return acc;
+      },
+      {},
+    );
+  }, [appState.devices]);
+
   const fetchSystemStatus = async () => {
     setIsFetching(true);
-    updateAppState({ isLoading: true, error: null }); // Set loading state globally
+    updateAppState({ isLoading: true, error: null });
 
     try {
-      // 1. Fetch Backend Health Status (Existing functionality)
       const res = await fetch("/api/health");
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const healthData: HealthResponse = await res.json();
 
-      // 2. Simulate Device Discovery (Placeholder for future logic)
-      // In a real app, this would call an API endpoint to get all devices.
-      const simulatedDevices: Record<string, DeviceState> = {
-        'light-1': { id: 'light-1', name: 'Living Room Light', type: 'light', isOn: true, brightness: 80, room: 'Living Room', lastUpdated: Date.now() },
-        'thermo-2': { id: 'thermo-2', name: 'Main Thermostat', type: 'thermostat', isOn: false, temperature: 21.5, room: 'Hallway', lastUpdated: Date.now() },
-        'light-3': { id: 'light-3', name: 'Kitchen Spot Light', type: 'light', isOn: false, brightness: undefined, room: 'Kitchen', lastUpdated: Date.now() },
-      };
+      // Preserve existing device states so we don't overwrite user toggles.
+      // Only seed defaults on first load (when devices is empty).
+      const existingDevices = appState.devices;
+      const devices =
+        Object.keys(existingDevices).length > 0
+          ? existingDevices
+          : {
+              "light-1": {
+                id: "light-1",
+                name: "Living Room Light",
+                type: "light",
+                isOn: true,
+                brightness: 80,
+                room: "Living Room",
+                lastUpdated: Date.now(),
+              },
+              "thermo-2": {
+                id: "thermo-2",
+                name: "Main Thermostat",
+                type: "thermostat",
+                isOn: false,
+                temperature: 21.5,
+                room: "Hallway",
+                lastUpdated: Date.now(),
+              },
+              "light-3": {
+                id: "light-3",
+                name: "Kitchen Spot Light",
+                type: "light",
+                isOn: false,
+                room: "Kitchen",
+                lastUpdated: Date.now(),
+              },
+            };
 
-      // Update the persistent state with all gathered data
       updateAppState({
         healthStatus: healthData,
-        devices: simulatedDevices,
+        devices,
         isLoading: false,
         error: null,
       });
-
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
       console.error("Error fetching system status:", err);
-      const errorMessage = err instanceof Error ? err.message : "Failed to connect to backend";
-      updateAppState({ 
-          isLoading: false, 
-          error: errorMessage, 
-          healthStatus: null // Clear health status on error
+      updateAppState({
+        isLoading: false,
+        error: message,
+        healthStatus: null,
       });
     } finally {
       setIsFetching(false);
     }
   };
 
-  // Initial load and periodic refresh setup
   useEffect(() => {
     fetchSystemStatus();
-    // Set up a polling mechanism to keep the state fresh (e.g., every 30 seconds)
-    const intervalId = setInterval(fetchSystemStatus, 30000);
-    return () => clearInterval(intervalId); // Cleanup on unmount
+    const interval = window.setInterval(fetchSystemStatus, 30_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * Handles toggling a device's state by calling the backend API.
-   */
   const handleDeviceToggle = async (deviceId: string, currentIsOn: boolean) => {
     if (isFetching) return;
 
-    // Optimistic update: immediately flip the UI state
+    // Optimistic update
     updateAppState({
-        devices: {
-            ...appState.devices,
-            [deviceId]: { ...appState.devices[deviceId], isOn: !currentIsOn }
-        }
+      devices: {
+        ...appState.devices,
+        [deviceId]: {
+          ...appState.devices[deviceId],
+          isOn: !currentIsOn,
+          lastUpdated: Date.now(),
+        },
+      },
     });
 
     try {
       const res = await fetch(`/api/device/${deviceId}/toggle`, {
-          method: 'POST',
-          headers: {
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ toggle: !currentIsOn })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { success: boolean; newState?: boolean };
 
-      if (!res.ok) {
-        throw new Error(`Failed to update device state: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      if (data.success && data.newState !== undefined) {
-          // Final confirmation of the state change from the backend
-          updateAppState({
-              devices: {
-                  ...appState.devices,
-                  [deviceId]: { ...appState.devices[deviceId], isOn: data.newState }
-              }
-          });
+      if (data.success && typeof data.newState === "boolean") {
+        updateAppState({
+          devices: {
+            ...appState.devices,
+            [deviceId]: {
+              ...appState.devices[deviceId],
+              isOn: data.newState,
+              lastUpdated: Date.now(),
+            },
+          },
+        });
       } else {
-          throw new Error("Backend reported failure to update state.");
+        throw new Error("Backend did not confirm state change");
       }
-
     } catch (error) {
       console.error("Device toggle failed:", error);
-      // Revert the optimistic update on failure
+      // Revert optimistic update
       updateAppState({
         devices: {
-            ...appState.devices,
-            [deviceId]: { ...appState.devices[deviceId], isOn: currentIsOn } // Revert to original state
-        }
-    });
-      alert("Failed to control device. Please check the console for details.");
+          ...appState.devices,
+          [deviceId]: { ...appState.devices[deviceId], isOn: currentIsOn },
+        },
+      });
+      window.alert("Failed to control device. Check the console for details.");
     }
   };
 
-  // Helper component for displaying device controls
-  const DeviceCard: React.FC<{ device: DeviceState }> = ({ device }) => {
+  const DeviceCard = ({ device }: { device: DeviceState }) => {
     const toggleStyle = device.isOn ? "bg-emerald-600" : "bg-slate-700";
+    const translateClass = device.isOn ? "translate-x-6" : "translate-x-1";
     return (
-      <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center">
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-4">
         <div>
-          <h3 className="font-semibold text-lg">{device.name}</h3 >
-          <p className="text-sm text-slate-400">{device.type}</p>
+          <h3 className="text-lg font-semibold">{device.name}</h3>
+          <p className="text-sm capitalize text-slate-400">{device.type}</p>
         </div>
-        {/* Simple toggle switch placeholder */}
-        <button 
-            onClick={() => handleDeviceToggle(device.id, device.isOn)}
-            disabled={isFetching}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${toggleStyle} focus:outline-none disabled:opacity-50`}
+        <button
+          onClick={() => handleDeviceToggle(device.id, device.isOn)}
+          disabled={isFetching}
+          aria-label={`Toggle ${device.name}`}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${toggleStyle}`}
         >
-            <span className="inline-block h-4 w-4 transform transition-transform bg-white rounded-full translate-x-full shadow"></span>
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${translateClass}`}
+          />
         </button>
       </div>
     );
   };
 
-  // Component to group devices by room
-  const RoomContainer: React.FC<{ roomName: string, devices: DeviceState[] }> = ({ roomName, devices }) => {
+  const RoomContainer = ({
+    roomName,
+    devices,
+  }: {
+    roomName: string;
+    devices: DeviceState[];
+  }) => {
     const [isOpen, setIsOpen] = useState(true);
-
     return (
-      <div className="border border-slate-700 rounded-xl bg-slate-900 shadow-lg overflow-hidden">
-        {/* Room Header */}
-        <button 
-            className="w-full flex justify-between items-center p-4 text-left hover:bg-slate-800 transition-colors"
-            onClick={() => setIsOpen(!isOpen)}
+      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-lg">
+        <button
+          className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-slate-800"
+          onClick={() => setIsOpen((o) => !o)}
         >
           <h2 className="text-xl font-bold text-indigo-300">{roomName}</h2>
-          {isOpen ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          {isOpen ? (
+            <ChevronUp className="h-5 w-5 text-slate-400" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-slate-400" />
+          )}
         </button>
-
-        {/* Device List */}
-        <div className={`transition-all duration-300 ${isOpen ? 'max-h-[80vh] opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
-            <div className="p-4 grid grid-cols-1 gap-4">
-                {devices.map((device) => (
-                    <DeviceCard key={device.id} device={device} />
-                ))}
-            </div>
+        <div
+          className={`grid gap-4 p-4 transition-all duration-300 ${
+            isOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+          } overflow-hidden`}
+        >
+          {devices.map((d) => (
+            <DeviceCard key={d.id} device={d} />
+          ))}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-slate-950 text-slate-50">
-      <div className="w-full max-w-xl p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-8">
-        
-        {/* Header and Refresh Button */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 p-6 text-slate-50">
+      <div className="w-full max-w-xl space-y-8 rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <Activity className="w-7 h-7 text-indigo-500" />
-            <h1 className="text-2xl font-bold tracking-tight">Smart Home Dashboard</h1>
+            <Activity className="h-7 w-7 text-indigo-500" />
+            <h1 className="text-2xl font-bold tracking-tight">
+              Smart Home Dashboard
+            </h1>
           </div>
           <button
             onClick={fetchSystemStatus}
             disabled={isFetching}
-            className={`p-2 rounded-lg transition-colors ${isFetching ? 'bg-slate-800 cursor-wait' : 'hover:bg-slate-700'} disabled:opacity-50`}
+            className="rounded-lg p-2 transition-colors hover:bg-slate-700 disabled:opacity-50"
             title="Refresh Status"
           >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+            />
           </button>
         </div>
 
-        {/* System Health Status */}
+        {/* System Status */}
         <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-300 border-b pb-1 mb-4">System Status</h2>
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+          <h2 className="border-b pb-1 text-lg font-semibold text-slate-300">
+            System Status
+          </h2>
+          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-4">
             <span className="text-sm text-slate-400">Backend Status</span>
             {appState.healthStatus ? (
-              <span className={`text-sm flex items-center gap-1 font-medium ${appState.healthStatus.status === "ok" ? 'text-emerald-500' : 'text-red-500'}`}>
-                <CheckCircle className="w-4 h-4" /> Online
+              <span className="flex items-center gap-1 text-sm font-medium text-emerald-500">
+                <CheckCircle className="h-4 w-4" /> Online
               </span>
             ) : (
-              <span className="text-sm text-red-500 flex items-center gap-1 font-medium">
-                <AlertCircle className="w-4 h-4" /> Offline
+              <span className="flex items-center gap-1 text-sm font-medium text-red-500">
+                <AlertCircle className="h-4 w-4" /> Offline
               </span>
             )}
-          </div >
+          </div>
 
           {appState.error && (
-            <div className="p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-400 text-sm">
-              <p className="font-semibold mb-1">Connection Error</p>
+            <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
+              <p className="mb-1 font-semibold">Connection Error</p>
               <p className="font-mono text-xs">{appState.error}</p>
             </div>
           )}
 
-          {/* Displaying detailed health info if available */}
           {appState.healthStatus && !isFetching && (
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-sm">
+            <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">Status Code</span>
-                <span className="font-mono text-emerald-400">{appState.healthStatus.status}</span>
+                <span className="font-mono text-emerald-400">
+                  {appState.healthStatus.status}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Last Check</span>
@@ -226,36 +281,31 @@ function App() {
                   {new Date(appState.healthStatus.timestamp).toLocaleTimeString()}
                 </span>
               </div>
-            </div >
-          )}
-        </div >
-
-        {/* Device Control Panel (Room Grouped Section) */}
-        <div className="pt-4 border-t border-slate-800">
-            <h2 className="text-lg font-semibold text-slate-300 mb-4">Rooms</h2>
-            <div className="space-y-6">
-                {/* Group devices by room */}
-                <>
-                {Object.values(appState.devices)
-                    .reduce((acc, device) => {
-                        if (!acc[device.room]) {
-                            acc[device.room] = [];
-                        }
-                        acc[device.room].push(device);
-                        return acc;
-                    }, {} as Record<string, DeviceState[]>)}
-                {Object.keys(appState.devices).map((roomName) => (
-                    <RoomContainer key={roomName} roomName={roomName} devices={Object.values(appState.devices).filter(d => d.room === roomName)} />
-                ))}
-                </>
             </div>
-        </div >
+          )}
+        </div>
+
+        {/* Rooms */}
+        <div className="border-t border-slate-800 pt-4">
+          <h2 className="mb-4 text-lg font-semibold text-slate-300">Rooms</h2>
+          {Object.keys(devicesByRoom).length === 0 ? (
+            <p className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-center text-sm text-slate-500">
+              No devices discovered yet.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(devicesByRoom).map(([room, devices]) => (
+                <RoomContainer key={room} roomName={room} devices={devices} />
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="mt-8 text-center text-xs text-slate-500">
           Phase 2: Room Grouping & UX Redesign Complete
         </div>
       </div>
-    </div >
+    </div>
   );
 }
 

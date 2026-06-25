@@ -1,27 +1,31 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
-import { Accessory, Characteristic, CharacteristicEventTypes, Service, uuid } from "hap-nodejs";
+import {
+  Accessory,
+  Categories,
+  Characteristic,
+  CharacteristicEventTypes,
+  Service,
+  uuid,
+} from "hap-nodejs";
 import { HealthResponse } from "@smart-home/shared";
 
 const app = express();
 const PORT = 3001;
 
-const corsOptions = {
-  origin: function (origin: any) {
-    // Allow requests from localhost:3000 (frontend dev server) and any origin for simplicity during development
-    if (!origin || ['localhost:3000', '::1'].includes(typeof origin === 'string' ? origin : '')) {
-      return true;
-    }
-    return false;
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    credentials: true,
+  }),
+);
 app.use(express.json());
 
-// Health check endpoint
-app.get("/api/health", (req: Request, res: Response) => {
+// --- In-memory state for the test HAP accessory ---
+let lightIsOn = false;
+
+// --- Health endpoint ---
+app.get("/api/health", (_req: Request, res: Response) => {
   const response: HealthResponse = {
     status: "ok",
     timestamp: Date.now(),
@@ -29,66 +33,53 @@ app.get("/api/health", (req: Request, res: Response) => {
   res.json(response);
 });
 
-// --- NEW DEVICE CONTROL ENDPOINT ---
-app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
-    const deviceId = req.params.id;
-    const accessory = new Accessory("Test Light", "hap-nodejs:accessories:test-light"); // Assuming we only control this one for now
+// --- Device toggle endpoint ---
+app.post("/api/device/:id/toggle", (req: Request, res: Response) => {
+  const { id } = req.params;
 
-    // In a real scenario, we would map the incoming deviceId to the correct accessory/service instance.
-    // For simplicity, we'll assume 'light-1' maps to our test light service.
-    if (deviceId !== "light-1") {
-        return res.status(404).json({ success: false, message: `Device ${deviceId} not found.` });
-    }
+  if (id !== "light-1") {
+    return res
+      .status(404)
+      .json({ success: false, message: `Device ${id} not found.` });
+  }
 
-    const lightService = accessory.getService("Test Lightbulb");
-    if (!lightService) {
-        return res.status(500).json({ success: false, message: "Light service not initialized." });
-    }
+  // Toggle the in-memory state and notify any HAP listeners.
+  lightIsOn = !lightIsOn;
+  console.log(`[Backend] Device ${id} toggled -> ${lightIsOn}`);
 
-    // Get current state to determine the new state
-    let currentState: boolean;
-    try {
-        currentState = lightService.getCharacteristic(Characteristic.On).value as boolean; // FIX: Use .value property for HAP-NodeJS getter
-    } catch (e) {
-        console.error("Error getting initial state:", e);
-        return res.status(500).json({ success: false, message: "Could not read current device state." });
-    }
-
-    const newState = !currentState;
-    try {
-        // Set the new value and wait for the characteristic to update (simulated)
-        lightService.getCharacteristic(Characteristic.On).setValue(newState);
-        console.log(`HAP: Successfully set light state to ${newState}`);
-        res.json({ success: true, newState: newState });
-    } catch (e) {
-        console.error("Error setting device state:", e);
-        res.status(500).json({ success: false, message: "Failed to update device state via HAP." });
-    }
+  return res.json({ success: true, newState: lightIsOn });
 });
 
-
-// Initialize a simple HAP-NodeJS accessory to verify it works
+// --- HAP-NodeJS accessory setup ---
 const accessoryUuid = uuid.generate("hap-nodejs:accessories:test-light");
 const accessory = new Accessory("Test Light", accessoryUuid);
+accessory.publish({
+  port: 51823,
+  username: "1A:2B:3C:4D:5E:6F",
+  pincode: "031-45-154",
+  category: Categories.LIGHTBULB,
+});
 
 const lightService = new Service.Lightbulb("Test Lightbulb");
-lightService.getCharacteristic(Characteristic.On)
-  .on(CharacteristicEventTypes.GET, (callback: (err: Error | null, value?: any) => void) => {
-    console.log("HAP: Get Light State");
-    // Initialize state to false for the test light
-    callback(null, false); 
+
+lightService
+  .getCharacteristic(Characteristic.On)
+  .on(CharacteristicEventTypes.GET, (callback) => {
+    console.log("[HAP] GET On ->", lightIsOn);
+    callback(null, lightIsOn);
   })
-  .on(CharacteristicEventTypes.SET, (value: any, callback: () => void) => {
-    console.log("HAP: Set Light State to", value);
+  .on(CharacteristicEventTypes.SET, (value, callback) => {
+    console.log("[HAP] SET On ->", value);
+    lightIsOn = Boolean(value);
     callback();
   });
 
 accessory.addService(lightService);
 
-// Start Express server
+// --- Start server ---
 app.listen(PORT, () => {
-  console.log(`\n========================================================`);
-  console.log(`✅ Backend server running successfully on http://localhost:${PORT}`);
-  console.log("HAP-NodeJS accessory initialized successfully.");
-  console.log(`========================================================\n`);
+  console.log("\n========================================================");
+  console.log(`✅ Backend running on http://localhost:${PORT}`);
+  console.log("✅ HAP accessory published on port 51823 (pin 031-45-154)");
+  console.log("========================================================\n");
 });
