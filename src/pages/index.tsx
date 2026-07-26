@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { getDeviceStates, updateDeviceState } from '../utils/db';
+import { getDeviceStates, updateDeviceState, getScenes, getSceneDetails } from '../utils/db';
 import { processMqttMessage, MqttPayload } from '../services/mqtt-gateway';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -136,6 +136,8 @@ export default function IndexPage() {
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [mqttPayloadInput, setMqttPayloadInput] = useState('{"isOn": true}');
+  const [scenes, setScenes] = useState<any[]>([]);
+  const [sceneLoading, setSceneLoading] = useState(false);
 
   // Function to fetch and display current device states from the database
   const loadDeviceStates = useCallback(async () => {
@@ -150,9 +152,23 @@ export default function IndexPage() {
     }
   }, []);
 
+  // Function to fetch and display available scenes
+  const loadScenes = useCallback(async () => {
+    setSceneLoading(true);
+    try {
+        const sceneList = await getScenes();
+        setScenes(sceneList);
+    } catch (error) {
+        console.error("Failed to load scenes:", error);
+    } finally {
+        setSceneLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadDeviceStates();
-  }, [loadDeviceStates]);
+    loadScenes(); // Load scenes on initial mount
+  }, [loadDeviceStates, loadScenes]);
 
 
   // Handler for simulating an incoming MQTT message
@@ -199,6 +215,34 @@ export default function IndexPage() {
             value={mqttPayloadInput}
             onChange={(e) => setMqttPayloadInput(e.target.value)}
         />
+      </Card>
+
+      {/* Scenes Panel */}
+      <h2 className="text-2xl font-bold mb-6">✨ Automation Scenes</h2>
+      <Card className="mb-10 p-6 border-l-4 border-purple-500 shadow-lg">
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+            <p className="text-sm text-gray-600 mb-2">Activate a routine with one click:</p>
+            {scenes.length === 0 ? (
+                <p className='text-muted-foreground'>No scenes defined yet.</p>
+            ) : (
+                <div className="flex flex-wrap gap-3">
+                    {scenes.map((scene) => (
+                        <Button key={scene.scene_id} onClick={() => {
+                            // Trigger the API call to activate the scene
+                            fetch('/api/scenes/activate', {
+                                method: 'POST',
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ sceneName: scene.scene_name })
+                            })
+                            .then(() => loadDeviceStates()) // Refresh UI after successful activation
+                            .catch(err => console.error("Failed to activate scene:", err))
+                        }}>
+                            {scene.scene_name}
+                        </Button>
+                    ))}
+                </div>
+            )}
+        </div >
       </Card>
 
       {/* Device Grid */}

@@ -1,4 +1,5 @@
-import { getDeviceStates, updateDeviceState } from '../utils/db';
+import { getDeviceStates, updateDeviceState, getSceneDetails } from '../utils/db';
+// Removed: import { MqttPayload } from './types'; 
 
 /**
  * Defines the structure for an incoming raw MQTT message payload.
@@ -101,6 +102,41 @@ export const processMqttMessage = async (mqttPayload: MqttPayload): Promise<void
 };
 
 /**
+ * Processes a Scene Activation command, updating multiple devices in one go.
+ * @param sceneName The name of the scene to activate.
+ */
+export const processSceneActivation = async (sceneName: string): Promise<void> => {
+    console.log(`[MQTT Gateway] Activating Scene: ${sceneName}`);
+
+    // 1. Fetch all actions defined for this scene from the database
+    const actions = await getSceneDetails(sceneName);
+    if (!actions || actions.length === 0) {
+        console.warn(`No actions found for scene: ${sceneName}`);
+        return;
+    }
+
+    // 2. Normalize all actions into DeviceState objects
+    let normalizedStates: DeviceState[] = [];
+    for (const action of actions) {
+        normalizedStates.push({
+            deviceId: action.action_device_id,
+            deviceName: `Scene ${sceneName}`, // Use scene name as a generic device name for the update
+            stateKey: action.action_state_key,
+            value: action.action_value,
+            lastUpdated: new Date(),
+        });
+    }
+
+    // 3. Update the database with all states from the scene
+    try {
+      await updateDeviceState(normalizedStates);
+      console.log(`[MQTT Gateway] Successfully activated Scene '${sceneName}' for ${normalizedStates.length} device(s).`);
+    } catch (error) {
+      console.error("[MQTT Gateway] Failed to update database during scene activation:", error);
+    }
+};
+
+/**
  * Simulates the continuous listening loop of an MQTT client.
  * In a real application, this would be managed by an external library like 'mqttjs'.
  */
@@ -116,5 +152,6 @@ export const startMqttGatewaySimulation = async () => {
 
 export default {
   processMqttMessage,
-  startMqttGatewaySimulation
+  startMqttGatewaySimulation,
+  processSceneActivation
 };
