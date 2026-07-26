@@ -10,26 +10,48 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 const DeviceCard = ({ device }: { device: any }) => {
   const [isToggling, setIsToggling] = useState(false);
 
-  const handleToggle = async (currentIsOn: boolean) => {
+  const handleToggle = async (currentValue: any) => {
     if (isToggling) return;
     setIsToggling(true);
 
-    // 1. Call the Backend API first (The primary control method)
+    let payloadToSend: MqttPayload;
+    let apiEndpoint: string;
+    let toggleAction: () => Promise<void>;
+
+    // Determine action based on device type/state key
+    if (device.state_key === 'is_on') {
+        // Light Toggle Logic
+        payloadToSend = { topic: `home/livingroom/light/power`, payload: { isOn: !currentValue } };
+        apiEndpoint = `/api/device/${device.device_id}/toggle`;
+        toggleAction = async () => {
+            await fetch(apiEndpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+        };
+    } else if (device.state_key === 'temperature') {
+        // Thermostat Control Logic (Simulating setting a target temperature)
+        const newTemp = Math.round(currentValue === 21 ? 23 : 21); // Simple toggle between 21 and 23
+        payloadToSend = { topic: `home/livingroom/thermostat/target`, payload: { targetTemperature: newTemp } };
+        apiEndpoint = `/api/device/${device.device_id}/set-temperature`;
+        toggleAction = async () => {
+            await fetch(apiEndpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+        };
+    } else {
+        // Fallback for other devices
+        setIsToggling(false);
+        return;
+    }
+
     try {
-      await fetch(`/api/device/${device.device_id}/toggle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      // 1. Call the Backend API first (The primary control method)
+      await toggleAction();
 
       // 2. Simulate the MQTT Gateway receiving the state change (The integration layer)
-      const newState = !currentIsOn;
-      const mqttPayload: MqttPayload = {
-          topic: `home/livingroom/light/power`, // Using a fixed topic for simulation
-          payload: { isOn: newState }
-      };
-
-      // We call the gateway service directly to simulate the event stream
-      await processMqttMessage(mqttPayload); 
+      await processMqttMessage(payloadToSend); 
 
     } catch (error) {
       console.error("Toggle failed:", error);
@@ -41,6 +63,7 @@ const DeviceCard = ({ device }: { device: any }) => {
 
   let displayValue: string;
   let unit = '';
+  let controlButton: React.ReactNode; // Declare the variable type
 
   switch (device.state_key) {
     case 'is_on':
@@ -50,9 +73,42 @@ const DeviceCard = ({ device }: { device: any }) => {
       displayValue = `${Math.round(device.value)}%`;
       unit = '%';
       break;
+    case 'temperature':
+        displayValue = `${parseFloat(device.value).toFixed(1)}°C`;
+        unit = ''; // Unit is in the display value itself
+        break;
     default:
       displayValue = String(device.value);
   }
+
+  // Render the appropriate control button/toggle based on device type
+  if (device.state_key === 'is_on') {
+    controlButton = (
+        <button
+          onClick={() => handleToggle(!device.value)} // Pass the current state to toggle
+          disabled={isToggling}
+          aria-label={`Toggle ${device.device_name}`}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${device.value ? 'bg-emerald-600' : 'bg-slate-700'}`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${!device.value ? 'translate-x-6' : 'translate-x-1'}`}
+          />
+        </button>
+    );
+  } else if (device.state_key === 'temperature') {
+      controlButton = (
+        <Button 
+            onClick={() => handleToggle(parseFloat(device.value))} // Pass the current temperature value
+            disabled={isToggling}
+            variant="outline"
+          >
+            {isToggling ? '...' : `Set Target to ${Math.round(parseFloat(device.value) === 21 ? 23 : 21)}°C`}
+        </Button>
+      );
+  } else {
+    controlButton = null; // Handle unknown device types gracefully
+  }
+
 
   return (
     <Card className="flex flex-col justify-between h-full">
@@ -69,16 +125,7 @@ const DeviceCard = ({ device }: { device: any }) => {
       </CardContent>
       {/* Control Toggle */}
       <div className="mt-4 pt-4 border-t border-slate-800">
-        <button
-          onClick={() => handleToggle(!device.value)} // Pass the current state to toggle
-          disabled={isToggling}
-          aria-label={`Toggle ${device.device_name}`}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${device.value ? 'bg-emerald-600' : 'bg-slate-700'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${!device.value ? 'translate-x-6' : 'translate-x-1'}`}
-          />
-        </button>
+        {controlButton}
       </div>
     </Card>
   );

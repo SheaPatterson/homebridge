@@ -35,8 +35,8 @@ export const processMqttMessage = async (mqttPayload: MqttPayload): Promise<void
 
   // Assuming structure: home/room/device_type/state -> e.g., home/livingroom/light/power
   const room = parts[1]; // livingroom
-  const deviceType = parts[2]; // light
-  const stateKey = parts[3] || 'status'; // power, brightness, etc.
+  const deviceType = parts[2]; // light, thermostat, etc.
+  const stateKey = parts[3] || 'status'; // power, brightness, temperature, etc.
 
   // 2. Payload Normalization (This is the core business logic)
   let normalizedStates: DeviceState[] = [];
@@ -68,8 +68,23 @@ export const processMqttMessage = async (mqttPayload: MqttPayload): Promise<void
       return;
     }
 
+  } else if (deviceType === 'thermostat') {
+    const payload = mqttPayload.payload;
+    // Example: Handling temperature readings
+    if (stateKey === 'temperature' && typeof payload.temperature !== 'undefined') {
+       normalizedStates.push({
+        deviceId: `${room}-thermo`,
+        deviceName: `Living Room Thermostat`,
+        stateKey: 'temperature',
+        value: Number(payload.temperature), // Ensure number type
+        lastUpdated: new Date(),
+      });
+    } else {
+      console.warn(`[MQTT Gateway] Could not normalize state for thermostat device from payload: ${JSON.stringify(payload)}`);
+      return;
+    }
   } else {
-    // Add logic for other devices (e.g., 'thermostat', 'sensor') here
+    // Add logic for other devices (e.g., 'sensor') here
     console.log(`[MQTT Gateway] Unsupported device type received: ${deviceType}`);
     return;
   }
