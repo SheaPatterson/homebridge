@@ -11,7 +11,6 @@ import type {
   AdapterHealth,
   DeviceAdapter,
   DeviceCommand,
-  DeviceState,
   DiscoveredDevice,
   PairingInput,
   PairingStep,
@@ -128,7 +127,11 @@ export class MockAdapter implements DeviceAdapter {
     const event: AdapterEvent = {
       type: "device_state_changed",
       deviceId,
-      state: { ...(device.state as DeviceState) },
+      state: { ...(device.state as Record<string, unknown>) } as AdapterEvent extends infer X
+        ? X extends { type: "device_state_changed"; state: infer S }
+          ? S
+          : never
+        : never,
     };
     this.emit(event);
   }
