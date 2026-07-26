@@ -1,18 +1,11 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import { Accessory, Categories, Characteristic, CharacteristicEventTypes, Service, uuid } from "hap-nodejs";
-// FIX: Corrected import path to use the correct function name
-import { getDbPool, fetchDevicesFromDb, updateDeviceState } from "./db";
-
-// --- WebSocket Setup ---
-import * as ws from 'ws'; // Need to import the websocket library
+import { getDbPool, fetchDevicesFromDb, updateDeviceStateInDb } from "./db";
 
 const app = express();
 const PORT = 3001;
-const PROJECT_ID = process.env.NEON_PROJECT_ID || "old-band-37207234";
-
-// Initialize WebSocket server on the same port as Express (or a dedicated one)
-const wss = new ws.WebSocketServer({ noServer: true }); 
+const PROJECT_ID = process.env.NEON_PROJECT_ID || "old-band-37207234"; // Using the provided ID
 
 app.use(
   cors({
@@ -79,7 +72,7 @@ app.get("/api/devices", async (_req: Request, res: Response) => {
 
 
 /**
- * Device control endpoint. Updates the state in the database and broadcasts via WebSocket.
+ * Device control endpoint. Updates the state in the database and simulates HAP notification.
  */
 app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -96,12 +89,13 @@ app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
 
     // 2. Determine new state and update DB
     const newState = !device.is_on;
-    await updateDeviceState(pool, id, { is_on: newState }); // Use the updated function signature
+    await updateDeviceStateInDb(pool, id, { is_on: newState });
 
     console.log(`[Backend] Device ${id} toggled -> ${newState}`);
 
     // 3. Simulate HAP notification (if applicable)
     if (id === "light-1") {
+        // In a real scenario, we would call the HAP service API here.
         console.log("[HAP] Simulating state change for Test Lightbulb.");
     }
 
@@ -114,27 +108,10 @@ app.post("/api/device/:id/toggle", async (req: Request, res: Response) => {
 });
 
 
-// --- WebSocket Integration ---
-const setupWebSocket = (server: any) => {
-    wss.on('connection', (ws) => {
-        console.log('[WS] Client connected.');
-
-        ws.on('close', () => {
-            console.log('[WS] Client disconnected.');
-        });
-    });
-};
-
-
 // --- Start server ---
-const httpServer = require('http').createServer(app); // Use http module to attach WS
-httpServer.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log("\n========================================================");
   console.log(`✅ Backend running on http://localhost:${PORT}`);
-  console.log("✅ WebSocket server active.");
   console.log("✅ HAP accessory published on port 51823 (pin 031-45-154)");
   console.log("========================================================\n");
 });
-
-// FIX: Attach the WebSocket server to the HTTP server using its event emitter
-wss.on('connection', setupWebSocket);
