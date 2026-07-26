@@ -6,14 +6,14 @@ export interface HealthResponse {
 }
 
 export interface DeviceState {
-  id: string;
+  device_id: string; // Standardized ID field
   name: string;
-  type: string; // e.g., 'light', 'thermostat'
-  isOn: boolean;
+  type: string; 
+  is_on: boolean; // Use snake_case for state keys
   brightness?: number;
   temperature?: number;
-  room: string; // Added room property for grouping
-  lastUpdated: number;
+  room: string; 
+  last_updated: number; // Standardized timestamp field
 }
 
 /**
